@@ -9,60 +9,36 @@
     @apply bg-warm-50 text-warm-700 font-sans antialiased;
     -webkit-tap-highlight-color: transparent;
   }
+  #root { @apply min-h-screen flex flex-col; max-width: 480px; margin: 0 auto; }
+}
 
-  #root {
-    @apply min-h-screen flex flex-col;
-    max-width: 480px;
-    margin: 0 auto;
-    box-shadow: 0 0 40px rgba(0, 0, 0, 0.05);
-  }
+.app-shell {
+  height: 100vh;
+  height: 100dvh;
 }
 
 @layer components {
   .page-container {
-    @apply flex-1 overflow-y-auto px-4 pt-4 pb-28;
+    @apply min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-4;
+    padding-bottom: calc(7rem + env(safe-area-inset-bottom));
+    -webkit-overflow-scrolling: touch;
   }
-
   .card {
     @apply bg-white rounded-2xl shadow-sm border border-warm-200 p-4;
   }
-
   .btn-primary {
-    @apply bg-primary-500 text-white font-medium rounded-xl px-6 py-3
-           active:bg-primary-600 transition-colors disabled:opacity-50;
+    @apply bg-primary-500 text-white font-medium rounded-xl px-6 py-3 active:bg-primary-600 transition-colors disabled:opacity-50;
   }
-
   .btn-ghost {
-    @apply text-warm-500 font-medium rounded-xl px-4 py-2
-           active:bg-warm-100 transition-colors;
+    @apply text-warm-500 font-medium rounded-xl px-4 py-2 active:bg-warm-100 transition-colors;
   }
-
   .chip {
-    @apply inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium
-           bg-warm-100 text-warm-600 active:bg-warm-200 transition-colors;
+    @apply inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium bg-warm-100 text-warm-600 active:bg-warm-200 transition-colors;
   }
-
-  .chip-active {
-    @apply bg-primary-100 text-primary-700;
-  }
-
-  /* ===== 字体大小模式 ===== */
-  /* 三档字体：普通/大字/特大，通过改变根字号等比例缩放所有文本 */
-  .font-size-normal { font-size: 14px; }
-  .font-size-large  { font-size: 18px; }
-  .font-size-xl     { font-size: 22px; }
-
-  .font-size-normal .btn-primary { padding: 0.5rem 1.5rem; }
-  .font-size-large  .btn-primary { padding: 0.75rem 2rem;   font-size: 1.05rem; }
-  .font-size-xl     .btn-primary { padding: 1rem 2.5rem;    font-size: 1.2rem; }
+  .chip-active { @apply bg-primary-100 text-primary-700; }
 }
 
 @layer utilities {
-  .scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-  .scrollbar-hide::-webkit-scrollbar {
-    display: none;
-  }
+  .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
 }
