@@ -1,103 +1,120 @@
-// 轻量同步层 —— 通过 HTTP POST + SSE 实现多设备数据共享
-// fallback：服务器不可用时自动降级到 localStorage
+// 多设备同步引擎 v2 — 支持 SSE 实时 + userId + 鉴权
 
 const STORE_KEY = 'early-edu-sync-cache'
 const POLL_MS = 3000
 
-// 服务器地址：部署到同一服务器时用当前 origin，跨域开发时可手动改
 let baseUrl = ''
 try { baseUrl = window.location.origin } catch {}
 
-// 内存缓存
 let cache = null
 let listeners = []
 let pollTimer = null
 let lastUpdate = 0
 
-// ====== 同步引擎 ======
+// 设备唯一标识（localStorage 持久化）
+function getUserId() {
+  let id = localStorage.getItem('early-edu-user-id')
+  if (!id) {
+    id = 'user_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8)
+    localStorage.setItem('early-edu-user-id', id)
+  }
+  return id
+}
 
-// 初始化：从服务器拉数据
+// 读取 SYNC_TOKEN（从环境变量或 localStorage 配置）
+function getToken() {
+  try { return localStorage.getItem('early-edu-sync-token') || '' } catch { return '' }
+}
+
+function headers() {
+  const t = getToken()
+  return t ? { 'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' }
+}
+
+// ====== 初始化：拉数据 + 启动轮询/SSE ======
 export async function syncInit() {
   try {
-    const res = await fetch(baseUrl + '/api/sync', { signal: AbortSignal.timeout(4000) })
+    const res = await fetch(baseUrl + '/api/sync', { headers: headers(), signal: AbortSignal.timeout(4000) })
     if (res.ok) {
       cache = await res.json()
       lastUpdate = cache.lastUpdate || 0
       saveLocal()
-      startPoll()
+      startSSE()
       return cache
     }
   } catch {}
-  // 服务器不可用 → 从本地缓存恢复
   return loadLocal()
 }
 
-// 推送变更到服务器（其他用户通过 SSE / 轮询收到）
+// ====== 推送变更 ======
 export async function syncPush(update) {
-  // 先合并到本地
-  if (!cache) cache = { profiles: {}, plans: {}, progress: {}, lastUpdate: 0 }
+  if (!cache) cache = { profiles: {}, plans: {}, progress: {}, records: {}, milestones: {}, lastUpdate: 0 }
+  // 本地合并
   if (update.profiles) Object.assign(cache.profiles, update.profiles)
-  if (update.plans)    Object.assign(cache.plans, update.plans)
+  if (update.plans) Object.assign(cache.plans, update.plans)
   if (update.progress) Object.assign(cache.progress, update.progress)
+  if (update.records) Object.assign(cache.records, update.records)
+  if (update.milestones) Object.assign(cache.milestones, update.milestones)
   saveLocal()
-
-  // 推送到服务器
+  // 推服务器
   try {
-    await fetch(baseUrl + '/api/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(update),
-      signal: AbortSignal.timeout(3000),
-    })
-  } catch {} // 静默降级
+    const body = JSON.stringify({ ...update, _userId: getUserId(), _at: Date.now() })
+    await fetch(baseUrl + '/api/sync', { method: 'POST', headers: headers(), body, signal: AbortSignal.timeout(3000) })
+  } catch {}
 }
 
-// 订阅数据变更
+// ====== 订阅变更 ======
 export function syncSubscribe(fn) {
   listeners.push(fn)
-  // 立即发一次当前数据
   if (cache) fn(cache)
   return () => { listeners = listeners.filter(f => f !== fn) }
 }
 
-// 获取当前缓存
 export function syncGetCache() { return cache }
+export function syncGetUserId() { return getUserId() }
 
-// ====== 内部 ======
-
-function notify() {
-  listeners.forEach(fn => { try { fn(cache) } catch {} })
+// ====== SSE 实时连接 ======
+function startSSE() {
+  try {
+    const es = new EventSource(baseUrl + '/api/stream')
+    es.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data)
+        if (msg.type === 'sync' && msg.data && msg.data.lastUpdate > lastUpdate) {
+          cache = msg.data
+          lastUpdate = msg.data.lastUpdate
+          saveLocal()
+          notify()
+        }
+      } catch {}
+    }
+    es.onerror = () => { es.close(); startPoll() }
+    return
+  } catch {}
+  startPoll()
 }
 
-// 长轮询：定期从服务器拉取最新数据
 function startPoll() {
   if (pollTimer) clearInterval(pollTimer)
   pollTimer = setInterval(async () => {
     try {
-      const res = await fetch(baseUrl + '/api/sync', { signal: AbortSignal.timeout(3000) })
+      const res = await fetch(baseUrl + '/api/sync', { headers: headers(), signal: AbortSignal.timeout(3000) })
       if (!res.ok) return
       const server = await res.json()
-      if (server.lastUpdate > lastUpdate) {
-        cache = server
-        lastUpdate = server.lastUpdate
-        saveLocal()
-        notify()
-      }
-    } catch { /* ignore */ }
+      if (server.lastUpdate > lastUpdate) { cache = server; lastUpdate = server.lastUpdate; saveLocal(); notify() }
+    } catch {}
   }, POLL_MS)
 }
 
-function saveLocal() {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(cache)) } catch {}
-}
-
+function saveLocal() { try { localStorage.setItem(STORE_KEY, JSON.stringify(cache)) } catch {} }
 function loadLocal() {
   try {
     const raw = localStorage.getItem(STORE_KEY)
     if (raw) { cache = JSON.parse(raw); lastUpdate = cache.lastUpdate || 0; return cache }
   } catch {}
-  cache = { profiles: {}, plans: {}, progress: {}, lastUpdate: 0 }
+  cache = { profiles: {}, plans: {}, progress: {}, records: {}, milestones: {}, lastUpdate: 0 }
   return cache
 }
+function notify() { listeners.forEach(fn => { try { fn(cache) } catch {} }) }
 
-export default { syncInit, syncPush, syncSubscribe, syncGetCache }
+export default { syncInit, syncPush, syncSubscribe, syncGetCache, syncGetUserId }

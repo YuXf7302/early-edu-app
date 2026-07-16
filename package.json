@@ -4,12 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "dev": "vite --config vite.config.ts",
+    "build": "vite build --config vite.config.ts",
     "start": "node sync-server.mjs",
-    "dev": "vite",
-    "build": "vite build",
-    "postinstall": "vite build",
-    "lint": "oxlint",
-    "preview": "vite preview"
+    "lint": "oxlint"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   },
   "dependencies": {
     "dexie": "^4.4.4",
